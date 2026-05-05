@@ -84,10 +84,17 @@
                             <small id="last-seen-status">Online</small>
                         </div>
                     </div>
-                    <div class="header-right">
+                    <div class="header-actions" style="display: flex; align-items: center;">
                         <button class="icon-btn">📞</button>
                         <button class="icon-btn">📹</button>
-                        <button class="icon-btn">⋮</button>
+                        <button class="icon-btn">🔍</button>
+                        <div style="position: relative;">
+                            <button class="three-dots icon-btn" onclick="toggleChatMenu()">⋮</button>
+                            <div id="chat-options-menu" class="dropdown-content" style="right: 0; left: auto; top: 100%;">
+                                <a href="javascript:void(0)" onclick="clearCurrentChat()">Clear Chat</a>
+                                <a href="javascript:void(0)" onclick="unfriendCurrentContact()" style="color: #f15c6d;">Unfriend Contact</a>
+                            </div>
+                        </div>
                     </div>
                 </header>
                 

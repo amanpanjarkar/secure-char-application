@@ -619,12 +619,21 @@ window.toggleMenu = () => {
 
 
 window.addEventListener('click', (e) => {
-    if (!e.target.matches('.three-dots')) {
-        const m = document.getElementById("options-menu");
-        if (m && m.classList.contains('show')) m.classList.remove('show');
-    }
-    const modal = document.getElementById("image-modal");
+    const modal = document.getElementById('add-contact-modal');
     if (e.target === modal) modal.style.display = "none";
+    
+    const reqModal = document.getElementById('requests-modal');
+    if (e.target === reqModal) reqModal.style.display = "none";
+
+    const menu = document.getElementById('options-menu');
+    if (menu && !e.target.matches('.three-dots') && !e.target.closest('#options-menu')) {
+        menu.style.display = 'none';
+    }
+
+    const chatMenu = document.getElementById('chat-options-menu');
+    if (chatMenu && !e.target.matches('.three-dots') && !e.target.closest('#chat-options-menu')) {
+        chatMenu.style.display = 'none';
+    }
 });
 
 window.initiateReply = function(key, data) {
@@ -778,6 +787,34 @@ window.acceptRequest = function(sender) {
 
 window.rejectRequest = function(sender) {
     database.ref(`users/${myName}/requests/${sender}`).remove();
+};
+
+window.toggleChatMenu = function() {
+    const menu = document.getElementById('chat-options-menu');
+    if (menu) menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
+};
+
+window.clearCurrentChat = function() {
+    if (!activeRecipient || !currentChatRef) return;
+    if (confirm(`Are you sure you want to completely clear your chat history with @${activeRecipient}? This cannot be undone.`)) {
+        currentChatRef.remove().then(() => {
+            document.getElementById('chat-box').innerHTML = "";
+            toggleChatMenu();
+            alert("System: Chat cleared successfully.");
+        }).catch(err => alert("Failed to clear chat: " + err.message));
+    }
+};
+
+window.unfriendCurrentContact = function() {
+    if (!activeRecipient) return;
+    if (confirm(`Are you sure you want to unfriend @${activeRecipient}? You will no longer see them in your contacts list.`)) {
+        // Remove from my contacts list
+        database.ref(`users/${myName}/contacts/${activeRecipient}`).remove().then(() => {
+            resetViewport();
+            toggleChatMenu();
+            alert(`System: You have unfriended @${activeRecipient}.`);
+        });
+    }
 };
 
 window.onload = () => {

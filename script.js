@@ -219,15 +219,32 @@ window.loginUser = function () {
     const email = document.getElementById('email').value.trim();
     const pass = document.getElementById('password').value;
     
-    if (!email || !pass) return alert("Login: Missing required fields.");
+    if (!email || !pass) return showToast("Login: Missing required fields.", "error");
 
     console.log("Auth: Validating session...");
     auth.signInWithEmailAndPassword(email, pass).then(() => {
     
-        database.ref('users').orderByChild('email').equalTo(email).once('value', snap => {
+        // Use searchIndex for case-insensitive lookup
+        database.ref('users').orderByChild('searchIndex').equalTo(email.toLowerCase()).once('value', snap => {
             if (!snap.exists()) {
-                alert("System Error: Handle association missing.");
-                auth.signOut();
+                // Fallback for older accounts that might not have a searchIndex
+                database.ref('users').orderByChild('email').equalTo(email).once('value', fallbackSnap => {
+                    if (!fallbackSnap.exists()) {
+                        showToast("System Error: Handle association missing.", "error");
+                        auth.signOut();
+                        return;
+                    }
+                    fallbackSnap.forEach(child => {
+                        myName = child.key; 
+                        localStorage.setItem('secureChatUserEmail', email);
+                        localStorage.setItem('secureChatUsername', myName);
+                        
+                        document.getElementById('auth-container').style.display = 'none';
+                        document.getElementById('chat-app').style.display = 'flex';
+
+                        bootSystems();
+                    });
+                });
                 return;
             }
             
@@ -242,7 +259,7 @@ window.loginUser = function () {
                 bootSystems();
             });
         });
-    }).catch(error => alert("Auth Failed: " + error.message));
+    }).catch(error => showToast("Auth Failed: " + error.message, "error"));
 };
 
 

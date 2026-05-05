@@ -585,19 +585,13 @@ window.confirmAddContact = function () {
 
     database.ref('users/' + h).once('value', s => {
         if (s.exists()) {
-            // Add ONLY to my contacts list
-            database.ref(`users/${myName}/contacts/${h}`).set(true);
-            
             // Send request to the other user
             database.ref(`users/${h}/requests/${myName}`).set({
                 timestamp: getTS()
             });
             
             closeAddContactModal();
-            
-            // Instantly open the chat with this new contact so they can message them immediately!
-            const u = s.val();
-            startChat(h, u.photo || defaultPic);
+            alert(`Chat request sent to @${h}! You can chat once they accept.`);
         } else {
             errorEl.innerText = "User not found. Check the username.";
             errorEl.style.display = "block";

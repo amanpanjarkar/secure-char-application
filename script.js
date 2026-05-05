@@ -30,7 +30,10 @@ let myName = "";
 let currentChatRef = null;
 let currentReplyTo = null;
 let typingTimeout = null;
+let currentReplyTo = null;
+let typingTimeout = null;
 let networkStatus = true;
+let lastRenderedDate = null;
 const defaultPic = "https://cdn-icons-png.flaticon.com/512/149/149071.png";
 
 
@@ -113,6 +116,27 @@ const getTS = (ts) => {
         minute: '2-digit', 
         hour12: true 
     });
+};
+
+const getTimestampFromPushId = (pushId) => {
+    const PUSH_CHARS = '-0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz';
+    let time = 0;
+    for (let i = 0; i < 8; i++) {
+        time = time * 64 + PUSH_CHARS.indexOf(pushId.charAt(i));
+    }
+    return time;
+};
+
+const formatDateSeparator = (timestamp) => {
+    const d = new Date(timestamp);
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    
+    if (d.toDateString() === today.toDateString()) return "Today";
+    if (d.toDateString() === yesterday.toDateString()) return "Yesterday";
+    
+    return d.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
 };
 
 
@@ -424,6 +448,7 @@ const resetViewport = () => {
 window.startChat = function (target, photoUrl) {
     if (!target) return;
     activeRecipient = target;
+    lastRenderedDate = null;
     
     document.getElementById('chat-app').classList.add('mobile-chat-active');
     document.getElementById('chat-placeholder').style.display = 'none';
@@ -466,6 +491,19 @@ function listenToTraffic() {
         if (d.sender !== myName && d.status !== 'seen') {
             currentChatRef.child(snap.key).update({ status: 'seen' });
         }
+        
+        const ts = getTimestampFromPushId(snap.key);
+        const dateString = new Date(ts).toDateString();
+        
+        if (dateString !== lastRenderedDate) {
+            const box = document.getElementById('chat-box');
+            const sep = document.createElement('div');
+            sep.className = 'date-separator';
+            sep.innerHTML = `<span>${formatDateSeparator(ts)}</span>`;
+            box.appendChild(sep);
+            lastRenderedDate = dateString;
+        }
+
         renderMessageBubble(d, snap.key);
     });
 

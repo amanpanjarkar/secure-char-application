@@ -175,3 +175,7 @@ button:hover { filter: brightness(1.1); }
 .toast.error { border-left-color: #f15c6d; }
 @keyframes toastIn { to { opacity: 1; transform: translateY(0); } }
 @keyframes toastOut { to { opacity: 0; transform: translateY(-20px); } }
+
+/* Date Separator */
+.date-separator { display: flex; justify-content: center; margin: 15px 0; width: 100%; }
+.date-separator span { background: var(--bg-hover); color: var(--text-muted); font-size: 12px; font-weight: 500; padding: 6px 12px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }

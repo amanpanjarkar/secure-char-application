@@ -26,10 +26,8 @@ const database = firebase.database();
 
 
 let activeRecipient = "";
-let myName = ""; 
+let myName = "";
 let currentChatRef = null;
-let currentReplyTo = null;
-let typingTimeout = null;
 let currentReplyTo = null;
 let typingTimeout = null;
 let networkStatus = true;
@@ -78,10 +76,10 @@ window.playNotificationSound = () => {
         gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.2);
         osc.start(ctx.currentTime);
         osc.stop(ctx.currentTime + 0.2);
-    } catch(e) { console.warn("Audio Context blocked or unsupported"); }
+    } catch (e) { console.warn("Audio Context blocked or unsupported"); }
 };
 
-window.showToast = function(msg, type = 'info') {
+window.showToast = function (msg, type = 'info') {
     const container = document.getElementById('toast-container');
     if (!container) return;
     const toast = document.createElement('div');
@@ -91,7 +89,7 @@ window.showToast = function(msg, type = 'info') {
     setTimeout(() => { if (toast.parentNode) toast.remove(); }, 3300);
 };
 
-window.showConfirm = function(msg, callback) {
+window.showConfirm = function (msg, callback) {
     document.getElementById('confirm-message').innerText = msg;
     document.getElementById('confirm-modal').style.display = 'flex';
     document.getElementById('confirm-btn-yes').onclick = () => {
@@ -99,22 +97,22 @@ window.showConfirm = function(msg, callback) {
         callback();
     };
 };
-window.closeConfirmModal = function() {
+window.closeConfirmModal = function () {
     document.getElementById('confirm-modal').style.display = 'none';
 };
 
-window.alert = function(msg) {
-    if(msg.includes('Error') || msg.includes('Failed')) showToast(msg, 'error');
+window.alert = function (msg) {
+    if (typeof msg === 'string' && (msg.includes('Error') || msg.includes('Failed'))) showToast(msg, 'error');
     else showToast(msg);
 };
 
 
 const getTS = (ts) => {
     const d = ts ? new Date(ts) : new Date();
-    return d.toLocaleTimeString([], { 
-        hour: '2-digit', 
-        minute: '2-digit', 
-        hour12: true 
+    return d.toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true
     });
 };
 
@@ -132,10 +130,10 @@ const formatDateSeparator = (timestamp) => {
     const today = new Date();
     const yesterday = new Date(today);
     yesterday.setDate(yesterday.getDate() - 1);
-    
+
     if (d.toDateString() === today.toDateString()) return "Today";
     if (d.toDateString() === yesterday.toDateString()) return "Yesterday";
-    
+
     return d.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
 };
 
@@ -149,14 +147,14 @@ async function uploadToCloudinary(file, isAuto = false) {
     const formData = new FormData();
     formData.append("file", file);
     formData.append("upload_preset", CLOUDINARY_PRESET);
-    
+
     const uploadEndpoint = isAuto ? CLOUDINARY_URL.replace("/image/upload", "/video/upload") : CLOUDINARY_URL;
 
     try {
         console.log("Media: Initiating Cloudinary POST stream...");
-        const response = await fetch(uploadEndpoint, { 
-            method: "POST", 
-            body: formData 
+        const response = await fetch(uploadEndpoint, {
+            method: "POST",
+            body: formData
         });
 
         if (!response.ok) throw new Error(`Media Error: ${response.status}`);
@@ -172,16 +170,16 @@ async function uploadToCloudinary(file, isAuto = false) {
 }
 
 
-window.registerUserFromPage = function() {
+window.registerUserFromPage = function () {
     const handle = document.getElementById('reg-username').value.trim();
     const email = document.getElementById('reg-email').value.trim();
     const pass = document.getElementById('reg-password').value;
-    
+
     if (!handle) return alert("Register: Please choose a username.");
     if (!email || pass.length < 6) {
         return alert("Register: Requires valid email and 6+ character password.");
     }
-    
+
     const username = cleanName(handle);
 
     database.ref('users/' + username).once('value').then(snapshot => {
@@ -207,7 +205,7 @@ window.registerUserFromPage = function() {
         });
     }).then(() => {
         alert(`Account Verified! Welcome @${username}. Please log in now.`);
-        window.location.href = "index.html"; 
+        window.location.href = "index.html";
     }).catch(error => {
         console.error("Auth Exception:", error.message);
         alert("Registration Failed: " + error.message);
@@ -215,39 +213,75 @@ window.registerUserFromPage = function() {
 };
 
 
-window.loginUser = function () {
+window.loginUser = async function () {
     const email = document.getElementById('email').value.trim();
     const pass = document.getElementById('password').value;
-    
+
+    const dbg = document.getElementById('debug-log');
+    if (dbg) { dbg.style.display = 'block'; dbg.innerHTML = 'Starting login...<br>'; }
+    const log = (m) => { if (dbg) dbg.innerHTML += m + '<br>'; console.log(m); };
+
     if (!email || !pass) return alert("Login: Missing required fields.");
 
-    console.log("Auth: Validating session...");
-    auth.signInWithEmailAndPassword(email, pass).then(() => {
-    
-        database.ref('users').orderByChild('email').equalTo(email).once('value', snap => {
-            if (!snap.exists()) {
-                alert("System Error: Handle association missing.");
-                auth.signOut();
-                return;
-            }
-            
-            snap.forEach(child => {
-                myName = child.key; 
-                localStorage.setItem('secureChatUserEmail', email);
-                localStorage.setItem('secureChatUsername', myName);
-                
-                document.getElementById('auth-container').style.display = 'none';
-                document.getElementById('chat-app').style.display = 'flex';
+    const loginBtn = document.querySelector('.btn-login');
+    if (loginBtn) {
+        loginBtn.innerText = "Verifying...";
+        loginBtn.style.opacity = "0.7";
+        loginBtn.disabled = true;
+    }
 
-                bootSystems();
-            });
-        });
-    }).catch(error => alert("Auth Failed: " + error.message));
+    const resetBtn = () => {
+        if (loginBtn) { loginBtn.innerText = "Login"; loginBtn.style.opacity = "1"; loginBtn.disabled = false; }
+    };
+
+    log("Auth: Initiating Firebase sign in...");
+    try {
+        const userCredential = await auth.signInWithEmailAndPassword(email, pass);
+        const authEmail = userCredential.user.email;
+        log("Auth: Success. Email: " + authEmail);
+
+        log("DB: Querying searchIndex...");
+        let snap = await database.ref('users').orderByChild('searchIndex').equalTo(authEmail.toLowerCase()).once('value');
+        log("DB: searchIndex snap exists? " + snap.exists());
+        if (snap.exists()) { proceedLogin(snap, authEmail); resetBtn(); return; }
+
+        log("DB: Querying exact authEmail...");
+        snap = await database.ref('users').orderByChild('email').equalTo(authEmail).once('value');
+        log("DB: authEmail snap exists? " + snap.exists());
+        if (snap.exists()) { proceedLogin(snap, authEmail); resetBtn(); return; }
+
+        log("DB: Querying raw typed email...");
+        snap = await database.ref('users').orderByChild('email').equalTo(email).once('value');
+        log("DB: typed email snap exists? " + snap.exists());
+        if (snap.exists()) { proceedLogin(snap, authEmail); resetBtn(); return; }
+
+        resetBtn();
+        log("Error: Handle missing in DB.");
+        alert("System Error: Handle association missing.");
+        await auth.signOut();
+    } catch (err) {
+        resetBtn();
+        log("<span style='color:#f15c6d'>Exception: " + err.message + "</span>");
+        alert("Auth/DB Failed: " + err.message);
+    }
 };
+
+function proceedLogin(snapshot, finalEmail) {
+    snapshot.forEach(child => {
+        myName = child.key;
+        localStorage.setItem('secureChatUserEmail', finalEmail);
+        localStorage.setItem('secureChatUsername', myName);
+
+        document.getElementById('auth-container').style.display = 'none';
+        document.getElementById('chat-app').style.display = 'flex';
+
+        bootSystems();
+    });
+}
 
 
 function bootSystems() {
-    
+
     database.ref('users/' + myName).update({ status: "Online", typing: "" });
     database.ref('users/' + myName).onDisconnect().update({ status: "Offline", lastSeen: firebase.database.ServerValue.TIMESTAMP, typing: "" });
 
@@ -274,9 +308,9 @@ function listenForRequests() {
         const badge = document.getElementById('requests-badge');
         const list = document.getElementById('requests-list');
         if (!badge || !list) return;
-        
+
         list.innerHTML = "";
-        
+
         if (!snap.exists()) {
             badge.style.display = 'none';
             list.innerHTML = "<p style='color: var(--text-muted); text-align: center; font-size: 14px;'>No pending requests.</p>";
@@ -299,7 +333,7 @@ function listenForRequests() {
                 </div>
             `;
         });
-        
+
         if (!isInitialRequestLoad && count > previousRequestCount) {
             playNotificationSound();
         }
@@ -318,11 +352,11 @@ function listenForRequests() {
 
 function initializeSidebar() {
     const contactsRef = database.ref(`users/${myName}/contacts`);
-    
+
     contactsRef.on('value', snap => {
         const list = document.getElementById('contact-list');
-        list.innerHTML = ""; 
-        
+        list.innerHTML = "";
+
         if (!snap.exists()) {
             console.log("Sidebar: Empty contact list.");
             return;
@@ -348,7 +382,7 @@ function renderSidebarRow(cid) {
         const row = document.createElement('div');
         row.className = 'contact-item';
         row.id = `row-${cid}`;
-        
+
         const isTyping = u.typing === myName;
         const color = isTyping || u.status === 'Online' ? '#25d366' : '#8696a0';
 
@@ -382,13 +416,13 @@ function renderSidebarRow(cid) {
         database.ref('chats/' + roomPath).on('value', chatSnap => {
             let unreadCount = 0;
             let lastMsg = null;
-            
+
             chatSnap.forEach(msgSnap => {
                 const msg = msgSnap.val();
                 lastMsg = msg;
                 if (msg.sender !== myName && msg.status !== 'seen') unreadCount++;
             });
-            
+
             if (!isInitialMsgLoad && unreadCount > previousUnread) {
                 playNotificationSound();
             }
@@ -415,7 +449,7 @@ function renderSidebarRow(cid) {
                     statusDiv.innerText = preview;
                     statusDiv.style.fontWeight = "bold";
                     statusDiv.style.color = "var(--text-main)";
-                    
+
                     const list = document.getElementById('contact-list');
                     if (list.firstChild !== rowEl) list.prepend(rowEl);
                 } else {
@@ -423,7 +457,7 @@ function renderSidebarRow(cid) {
                     statusDiv.innerText = u.typing === myName ? 'typing...' : preview;
                     statusDiv.style.fontWeight = "normal";
                     statusDiv.style.color = "var(--text-muted)";
-                    
+
                     const list = document.getElementById('contact-list');
                     if (list.firstChild !== rowEl) list.prepend(rowEl);
                 }
@@ -453,21 +487,21 @@ window.startChat = function (target, photoUrl) {
     if (!target) return;
     activeRecipient = target;
     lastRenderedDate = null;
-    
+
     document.getElementById('chat-app').classList.add('mobile-chat-active');
     document.getElementById('chat-placeholder').style.display = 'none';
     document.getElementById('chat-active-view').style.display = 'flex';
-    
+
     document.getElementById('active-user-title').innerText = target;
     if (photoUrl) document.getElementById('active-user-pic').src = photoUrl;
     document.getElementById('chat-box').innerHTML = "";
 
     const roomPath = [myName, activeRecipient].sort().join("_");
-    
+
     if (currentChatRef) currentChatRef.off();
     currentChatRef = database.ref('chats/' + roomPath);
 
-    
+
     database.ref('users/' + target).on('value', snap => {
         const u = snap.val();
         const sLabel = document.getElementById('last-seen-status');
@@ -489,16 +523,16 @@ window.startChat = function (target, photoUrl) {
 
 
 function listenToTraffic() {
-    
+
     currentChatRef.on('child_added', snap => {
         const d = snap.val();
         if (d.sender !== myName && d.status !== 'seen') {
             currentChatRef.child(snap.key).update({ status: 'seen' });
         }
-        
+
         const ts = getTimestampFromPushId(snap.key);
         const dateString = new Date(ts).toDateString();
-        
+
         if (dateString !== lastRenderedDate) {
             const box = document.getElementById('chat-box');
             const sep = document.createElement('div');
@@ -511,7 +545,7 @@ function listenToTraffic() {
         renderMessageBubble(d, snap.key);
     });
 
-    
+
     currentChatRef.on('child_changed', snap => {
         const data = snap.val();
         const ticks = document.getElementById(`tick-${snap.key}`);
@@ -520,7 +554,7 @@ function listenToTraffic() {
         }
     });
 
-    
+
     currentChatRef.on('child_removed', snap => {
         const el = document.getElementById(`msg-${snap.key}`);
         if (el) el.remove();
@@ -532,7 +566,7 @@ function renderMessageBubble(data, key) {
     const isMe = data.sender === myName;
     const box = document.getElementById('chat-box');
     const msgDiv = document.createElement('div');
-    
+
     msgDiv.className = `message ${isMe ? 'me' : ''}`;
     msgDiv.id = `msg-${key}`;
 
@@ -566,7 +600,7 @@ function renderMessageBubble(data, key) {
         </div>
     `;
 
-   
+
     setupBubbleMenu(msgDiv, key, isMe, data);
 
     box.appendChild(msgDiv);
@@ -579,19 +613,19 @@ function setupBubbleMenu(element, key, isMe, data) {
     const trigger = (e) => {
         const posX = e.type === 'touchstart' ? e.touches[0].clientX : e.clientX;
         const posY = e.type === 'touchstart' ? e.touches[0].clientY : e.clientY;
-        
+
         t = setTimeout(() => {
             const menu = document.createElement('div');
             menu.className = 'delete-menu';
-            menu.style.left = posX + "px"; 
+            menu.style.left = posX + "px";
             menu.style.top = posY + "px";
-            
+
             const btnReply = document.createElement('div');
             btnReply.className = "delete-opt";
             btnReply.innerText = "Reply";
             btnReply.onclick = () => { initiateReply(key, data); menu.remove(); };
             menu.appendChild(btnReply);
-            
+
             const btn1 = document.createElement('div');
             btn1.className = "delete-opt";
             btn1.innerText = "Delete for me";
@@ -605,9 +639,9 @@ function setupBubbleMenu(element, key, isMe, data) {
                 btn2.onclick = () => { currentChatRef.child(key).remove(); menu.remove(); };
                 menu.appendChild(btn2);
             }
-            
+
             document.body.appendChild(menu);
-            setTimeout(() => { window.onclick = () => { if(menu) menu.remove(); }; }, 100);
+            setTimeout(() => { window.onclick = () => { if (menu) menu.remove(); }; }, 100);
         }, 850);
     };
 
@@ -634,9 +668,9 @@ window.sendMessage = function () {
     if (currentReplyTo) {
         payload.replyTo = currentReplyTo;
     }
-    
+
     currentChatRef.push().set(payload);
-    
+
     inp.value = "";
     if (typeof cancelReply === 'function') cancelReply();
     if (typeof handleTyping === 'function') handleTyping();
@@ -651,15 +685,15 @@ window.sendImageFile = async function () {
 
     const url = await uploadToCloudinary(file);
     if (url) {
-        currentChatRef.push().set({ 
-            sender: myName, 
-            text: url, 
-            type: 'image', 
-            time: getTS(), 
-            status: 'sent' 
+        currentChatRef.push().set({
+            sender: myName,
+            text: url,
+            type: 'image',
+            time: getTS(),
+            status: 'sent'
         });
     }
-    fInput.value = ""; 
+    fInput.value = "";
 };
 
 
@@ -677,7 +711,7 @@ window.updateProfilePhoto = async function () {
 window.updateTypingStatus = function () {
     if (!activeRecipient) return;
     database.ref('users/' + myName).update({ typing: activeRecipient });
-    
+
     clearTimeout(typingTimeout);
     typingTimeout = setTimeout(() => {
         database.ref('users/' + myName).update({ typing: "" });
@@ -703,13 +737,13 @@ window.closeAddContactModal = function () {
 window.confirmAddContact = function () {
     const raw = document.getElementById('new-contact-username').value.trim();
     const errorEl = document.getElementById('add-contact-error');
-    
+
     if (!raw) {
         errorEl.innerText = "Please enter a username.";
         errorEl.style.display = "block";
         return;
     }
-    
+
     const h = cleanName(raw);
 
     if (h === myName) {
@@ -726,7 +760,7 @@ window.confirmAddContact = function () {
             database.ref(`users/${h}/requests/${myName}`).set({
                 timestamp: getTS()
             });
-            
+
             closeAddContactModal();
             alert(`Chat request sent to @${h}! You can chat once they accept.`);
         } else {
@@ -744,19 +778,19 @@ window.openFullImage = (url) => {
 
 window.toggleMenu = () => {
     const m = document.getElementById("options-menu");
-    if(m) m.style.display = m.style.display === 'block' ? 'none' : 'block';
+    if (m) m.style.display = m.style.display === 'block' ? 'none' : 'block';
 };
 
-window.toggleEmojiMenu = function() {
+window.toggleEmojiMenu = function () {
     const menu = document.getElementById('emoji-menu');
     if (menu) menu.style.display = menu.style.display === 'grid' ? 'none' : 'grid';
 };
 
-window.addEmoji = function(emoji) {
+window.addEmoji = function (emoji) {
     const input = document.getElementById('message-input');
     if (input) {
         input.value += emoji;
-        if(typeof handleTyping === 'function') handleTyping();
+        if (typeof handleTyping === 'function') handleTyping();
         document.getElementById('emoji-menu').style.display = 'none';
         input.focus();
     }
@@ -767,7 +801,7 @@ window.addEmoji = function(emoji) {
 window.addEventListener('click', (e) => {
     const modal = document.getElementById('add-contact-modal');
     if (e.target === modal) modal.style.display = "none";
-    
+
     const reqModal = document.getElementById('requests-modal');
     if (e.target === reqModal) reqModal.style.display = "none";
 
@@ -787,7 +821,7 @@ window.addEventListener('click', (e) => {
     }
 });
 
-window.initiateReply = function(key, data) {
+window.initiateReply = function (key, data) {
     let previewText = "";
     if (data.type === 'image') previewText = '📷 Photo';
     else if (data.type === 'audio') previewText = '🎤 Voice message';
@@ -804,13 +838,13 @@ window.initiateReply = function(key, data) {
     document.getElementById('message-input').focus();
 };
 
-window.cancelReply = function() {
+window.cancelReply = function () {
     currentReplyTo = null;
     const container = document.getElementById('reply-preview-container');
     if (container) container.style.display = 'none';
 };
 
-window.scrollToMessage = function(key) {
+window.scrollToMessage = function (key) {
     const el = document.getElementById(`msg-${key}`);
     if (el) {
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -819,18 +853,18 @@ window.scrollToMessage = function(key) {
     }
 };
 
-window.toggleDarkMode = function() {
+window.toggleDarkMode = function () {
     const isDark = document.body.getAttribute('data-theme') === 'dark';
     document.body.setAttribute('data-theme', isDark ? 'light' : 'dark');
 };
 
-window.handleTyping = function() {
+window.handleTyping = function () {
     updateTypingStatus();
     const val = document.getElementById('message-input').value.trim();
     const sendBtn = document.getElementById('send-btn');
     const voiceBtn = document.getElementById('voice-btn');
-    if(sendBtn && voiceBtn) {
-        if(val) {
+    if (sendBtn && voiceBtn) {
+        if (val) {
             sendBtn.style.display = 'block';
             voiceBtn.style.display = 'none';
         } else {
@@ -840,7 +874,7 @@ window.handleTyping = function() {
     }
 };
 
-window.filterContacts = function() {
+window.filterContacts = function () {
     const term = document.getElementById('contact-search').value.toLowerCase();
     const items = document.querySelectorAll('.contact-item');
     items.forEach(item => {
@@ -853,13 +887,13 @@ let mediaRecorder;
 let audioChunks = [];
 let isRecording = false;
 
-window.toggleVoiceRecord = async function() {
+window.toggleVoiceRecord = async function () {
     const voiceBtn = document.getElementById('voice-btn');
     if (!isRecording) {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             mediaRecorder = new MediaRecorder(stream);
-            
+
             mediaRecorder.ondataavailable = event => {
                 audioChunks.push(event.data);
             };
@@ -867,13 +901,13 @@ window.toggleVoiceRecord = async function() {
             mediaRecorder.onstop = async () => {
                 const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
                 audioChunks = [];
-                
+
                 voiceBtn.style.color = "";
                 voiceBtn.innerText = "🎤";
-                
+
                 const file = new File([audioBlob], "voice_note.webm", { type: 'audio/webm' });
                 const url = await uploadToCloudinary(file, true);
-                
+
                 if (url && currentChatRef) {
                     const payload = {
                         sender: myName,
@@ -889,7 +923,7 @@ window.toggleVoiceRecord = async function() {
                     if (typeof cancelReply === 'function') cancelReply();
                 }
             };
-            
+
             audioChunks = [];
             mediaRecorder.start();
             isRecording = true;
@@ -908,7 +942,7 @@ window.toggleVoiceRecord = async function() {
     }
 };
 
-window.logoutUser = function() {
+window.logoutUser = function () {
     auth.signOut().then(() => {
         localStorage.removeItem('secureChatUsername');
         localStorage.removeItem('secureChatUserEmail');
@@ -919,33 +953,33 @@ window.logoutUser = function() {
     });
 };
 
-window.openRequestsModal = function() {
+window.openRequestsModal = function () {
     const modal = document.getElementById('requests-modal');
     if (modal) modal.style.display = "flex";
 };
 
-window.closeRequestsModal = function() {
+window.closeRequestsModal = function () {
     const modal = document.getElementById('requests-modal');
     if (modal) modal.style.display = "none";
 };
 
-window.acceptRequest = function(sender) {
+window.acceptRequest = function (sender) {
     database.ref(`users/${myName}/contacts/${sender}`).set(true);
     database.ref(`users/${sender}/contacts/${myName}`).set(true);
     database.ref(`users/${myName}/requests/${sender}`).remove();
     alert(`System: Chat request from @${sender} accepted.`);
 };
 
-window.rejectRequest = function(sender) {
+window.rejectRequest = function (sender) {
     database.ref(`users/${myName}/requests/${sender}`).remove();
 };
 
-window.toggleChatMenu = function() {
+window.toggleChatMenu = function () {
     const menu = document.getElementById('chat-options-menu');
     if (menu) menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
 };
 
-window.clearCurrentChat = function() {
+window.clearCurrentChat = function () {
     if (!activeRecipient || !currentChatRef) return;
     showConfirm(`Are you sure you want to completely clear your chat history with @${activeRecipient}? This cannot be undone.`, () => {
         currentChatRef.remove().then(() => {
@@ -956,7 +990,7 @@ window.clearCurrentChat = function() {
     });
 };
 
-window.unfriendCurrentContact = function() {
+window.unfriendCurrentContact = function () {
     if (!activeRecipient) return;
     showConfirm(`Are you sure you want to unfriend @${activeRecipient}? You will no longer see them in your contacts list.`, () => {
         // Remove from my contacts list
@@ -971,15 +1005,15 @@ window.unfriendCurrentContact = function() {
 window.onload = () => {
     const savedName = localStorage.getItem('secureChatUsername');
     const savedEmail = localStorage.getItem('secureChatUserEmail');
-    
+
     if (savedName && savedEmail) {
         myName = savedName;
         const authContainer = document.getElementById('auth-container');
         if (authContainer) authContainer.style.display = 'none';
-        
+
         const chatApp = document.getElementById('chat-app');
         if (chatApp) chatApp.style.display = 'flex';
-        
+
         bootSystems();
     }
 };

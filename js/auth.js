@@ -115,7 +115,7 @@ window.logoutUser = function () {
 window.changeMyUsername = async function() {
     const newUsername = prompt("Enter new username (no spaces):");
     if (!newUsername) return;
-    
+
     const cleanNew = newUsername.trim().toLowerCase().replace(/[\.\#\$\[\]\s]/g, "_");
     if (!cleanNew || cleanNew === myName) return;
 
@@ -129,23 +129,24 @@ window.changeMyUsername = async function() {
         if (!confirm(`Are you sure? Your friends will need to re-add you as @${cleanNew}.`)) return;
 
         showToast("Migrating account...", "info");
-        
+
         // 1. Get old data
         const oldDataSnap = await database.ref('users/' + myName).once('value');
         const data = oldDataSnap.val();
-        
+
         // 2. Update username in data
         data.username = cleanNew;
-        
+
         // 3. Write to new node
         await database.ref('users/' + cleanNew).set(data);
-        
+
         // 4. Delete old node
         await database.ref('users/' + myName).remove();
-        
-        // 5. Update local storage
+
+        // 5. Update local storage and global variable
         localStorage.setItem('secureChatUsername', cleanNew);
-        
+        myName = cleanNew; // Update global variable
+
         alert("Username changed successfully! The app will now reload.");
         location.reload();
     } catch (e) {

@@ -76,11 +76,24 @@
                     <input type="text" placeholder="Search or start new chat" id="contact-search"
                         oninput="filterContacts()">
                 </div>
-            </div>
-
             <div id="status-tray" class="status-tray" style="display: flex; gap: 15px; padding: 15px; overflow-x: auto; border-bottom: 1px solid var(--border-color); background: var(--bg-sidebar);">
-                <!-- Status avatars injected here -->
+                <!-- Fallback Static Status Button -->
+                <div style="display: flex; flex-direction: column; align-items: center; cursor: pointer; min-width: 60px;" onclick="document.getElementById('status-upload-modal').style.display='flex'">
+                    <div style="width: 50px; height: 50px; border-radius: 50%; background: var(--bg-hover); display: flex; align-items: center; justify-content: center; font-size: 24px; color: var(--accent); position: relative; border: 2px solid transparent;" id="my-status-ring">
+                        <img src="https://cdn-icons-png.flaticon.com/512/149/149071.png" id="my-status-avatar" style="width:100%; height:100%; border-radius:50%; object-fit:cover; display:none;">
+                        <span id="my-status-plus" style="position: absolute; bottom: -2px; right: -2px; background: var(--accent); color: white; border-radius: 50%; width: 16px; height: 16px; font-size: 12px; display: flex; align-items: center; justify-content: center; border: 2px solid var(--bg-app);">＋</span>
+                    </div>
+                    <span style="font-size: 11px; margin-top: 5px; color: var(--text-main);">My Status</span>
+                </div>
             </div>
+            <script>
+                // A tiny script to force the tray to be visible if JS isn't throwing errors
+                setTimeout(() => {
+                    if (document.getElementById('status-tray')) {
+                        document.getElementById('status-tray').style.display = 'flex';
+                    }
+                }, 500);
+            </script>
             <div id="contact-list" class="contacts-area"></div>
         </aside>
 

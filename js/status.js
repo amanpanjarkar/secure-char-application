@@ -8,6 +8,12 @@ let statusProgressInterval = null;
 const STATUS_DURATION = 5000; // 5 seconds
 
 window.loadStatuses = function() {
+    console.log("Status Engine: Initializing for", myName);
+    const tray = document.getElementById('status-tray');
+    if (!tray) {
+        console.error("Status Engine: 'status-tray' not found in DOM! (Is index.html cached?)");
+    }
+
     const contactsRef = database.ref(`users/${myName}/contacts`);
     contactsRef.on('value', snap => {
         let contacts = [myName];
@@ -19,25 +25,10 @@ window.loadStatuses = function() {
         
         const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
         
-        database.ref('statuses').on('value', statusSnap => {
-            statusesByContact = {};
-            const tray = document.getElementById('status-tray');
-            if(!tray) return;
-            
-            // Base add status button
-            let myTrayHTML = `
-                <div style="display: flex; flex-direction: column; align-items: center; cursor: pointer; min-width: 60px;" onclick="document.getElementById('status-upload-modal').style.display='flex'">
-                    <div style="width: 50px; height: 50px; border-radius: 50%; background: var(--bg-hover); display: flex; align-items: center; justify-content: center; font-size: 24px; color: var(--accent); position: relative; border: 2px solid transparent;" id="my-status-ring">
-                        <img src="${defaultPic}" id="my-status-avatar" style="width:100%; height:100%; border-radius:50%; object-fit:cover; display:none;">
-                        <span id="my-status-plus" style="position: absolute; bottom: -2px; right: -2px; background: var(--accent); color: white; border-radius: 50%; width: 16px; height: 16px; font-size: 12px; display: flex; align-items: center; justify-content: center; border: 2px solid var(--bg-app);">＋</span>
-                    </div>
-                    <span style="font-size: 11px; margin-top: 5px; color: var(--text-main);">My Status</span>
-                </div>
-            `;
-            tray.innerHTML = myTrayHTML;
-            
-            contacts.forEach(contact => {
-                const s = statusSnap.child(contact).val();
+        // Listen to each contact's statuses
+        contacts.forEach(contact => {
+            database.ref(`users/${contact}/statuses`).on('value', statusSnap => {
+                const s = statusSnap.val();
                 if (s) {
                     let activeStatuses = [];
                     let hasUnseen = false;
@@ -52,42 +43,72 @@ window.loadStatuses = function() {
                     if (activeStatuses.length > 0) {
                         activeStatuses.sort((a,b) => a.timestamp - b.timestamp);
                         statusesByContact[contact] = activeStatuses;
-                        
-                        if (contact === myName) {
-                            database.ref(`users/${myName}/photo`).once('value', pSnap => {
-                                const p = pSnap.val() || defaultPic;
-                                const avatar = document.getElementById('my-status-avatar');
-                                if(avatar) {
-                                    avatar.src = p;
-                                    avatar.style.display = 'block';
-                                    document.getElementById('my-status-ring').style.border = '2px solid var(--border-color)';
-                                    document.getElementById('my-status-ring').onclick = (e) => {
-                                        e.stopPropagation();
-                                        openStatusViewer(myName);
-                                    };
-                                }
-                            });
-                        } else {
-                            database.ref('users/'+contact+'/photo').once('value', photoSnap => {
-                                const p = photoSnap.val() || defaultPic;
-                                const div = document.createElement('div');
-                                div.style.cssText = "display: flex; flex-direction: column; align-items: center; cursor: pointer; min-width: 60px;";
-                                div.onclick = () => openStatusViewer(contact);
-                                div.innerHTML = `
-                                    <div style="width: 50px; height: 50px; border-radius: 50%; padding: 2px; border: 2px solid ${hasUnseen ? 'var(--accent)' : 'var(--border-color)'};">
-                                        <img src="${p}" style="width: 100%; height: 100%; border-radius: 50%; object-fit: cover;">
-                                    </div>
-                                    <span style="font-size: 11px; margin-top: 5px; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 60px;">${contact}</span>
-                                `;
-                                tray.appendChild(div);
-                            });
-                        }
+                    } else {
+                        delete statusesByContact[contact];
                     }
+                } else {
+                    delete statusesByContact[contact];
                 }
+                renderStatusTray();
             });
         });
     });
 };
+
+function renderStatusTray() {
+    const trayElement = document.getElementById('status-tray');
+    if(!trayElement) return;
+
+    // Reset with base button
+    trayElement.innerHTML = `
+        <div style="display: flex; flex-direction: column; align-items: center; cursor: pointer; min-width: 60px;" onclick="document.getElementById('status-upload-modal').style.display='flex'">
+            <div style="width: 50px; height: 50px; border-radius: 50%; background: var(--bg-hover); display: flex; align-items: center; justify-content: center; font-size: 24px; color: var(--accent); position: relative; border: 2px solid transparent;" id="my-status-ring">
+                <img src="${defaultPic}" id="my-status-avatar" style="width:100%; height:100%; border-radius:50%; object-fit:cover; display:none;">
+                <span id="my-status-plus" style="position: absolute; bottom: -2px; right: -2px; background: var(--accent); color: white; border-radius: 50%; width: 16px; height: 16px; font-size: 12px; display: flex; align-items: center; justify-content: center; border: 2px solid var(--bg-app);">＋</span>
+            </div>
+            <span style="font-size: 11px; margin-top: 5px; color: var(--text-main);">My Status</span>
+        </div>
+    `;
+
+    Object.keys(statusesByContact).forEach(contact => {
+        const statuses = statusesByContact[contact];
+        let hasUnseen = false;
+        if (contact !== myName) {
+            hasUnseen = statuses.some(st => !st.views || !st.views[myName]);
+        } else {
+            // Update my avatar if I have a status
+            database.ref(`users/${myName}/photo`).once('value', pSnap => {
+                const p = pSnap.val() || defaultPic;
+                const avatar = document.getElementById('my-status-avatar');
+                if(avatar) {
+                    avatar.src = p;
+                    avatar.style.display = 'block';
+                    document.getElementById('my-status-ring').style.border = '2px solid var(--border-color)';
+                    document.getElementById('my-status-ring').onclick = (e) => {
+                        e.stopPropagation();
+                        openStatusViewer(myName);
+                    };
+                }
+            });
+            return; // Already rendered the "My Status" block
+        }
+
+        database.ref('users/'+contact+'/photo').once('value', photoSnap => {
+            const p = photoSnap.val() || defaultPic;
+            const div = document.createElement('div');
+            div.className = 'status-avatar-item';
+            div.style.cssText = "display: flex; flex-direction: column; align-items: center; cursor: pointer; min-width: 60px;";
+            div.onclick = () => openStatusViewer(contact);
+            div.innerHTML = `
+                <div style="width: 50px; height: 50px; border-radius: 50%; padding: 2px; border: 2px solid ${hasUnseen ? 'var(--accent)' : 'var(--border-color)'};">
+                    <img src="${p}" style="width: 100%; height: 100%; border-radius: 50%; object-fit: cover;">
+                </div>
+                <span style="font-size: 11px; margin-top: 5px; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 60px;">${contact}</span>
+            `;
+            trayElement.appendChild(div);
+        });
+    });
+}
 
 window.uploadStatus = async function() {
     const textInput = document.getElementById('status-text-input');
@@ -107,14 +128,12 @@ window.uploadStatus = async function() {
     
     try {
         let payload = {
-            timestamp: firebase.database.ServerValue.TIMESTAMP,
-            views: {},
-            reactions: {}
+            timestamp: firebase.database.ServerValue.TIMESTAMP
         };
         
         if (file) {
-            const url = await uploadToCloudinary(file, true);
-            if (!url) throw new Error("Upload failed");
+            const url = await window.uploadToCloudinary(file, true);
+            if (!url) throw new Error("Media server rejected the file.");
             payload.type = file.type.startsWith('video/') ? 'video' : 'image';
             payload.content = url;
             if (text) payload.caption = text;
@@ -123,15 +142,19 @@ window.uploadStatus = async function() {
             payload.content = text;
         }
         
-        await database.ref(`statuses/${myName}`).push(payload);
-        showToast("Status posted!");
+        const newRef = database.ref(`users/${myName}/statuses`).push();
+        await newRef.set(payload);
+        
+        showToast("Status posted successfully!");
         
         document.getElementById('status-upload-modal').style.display = 'none';
         textInput.value = "";
         fileInput.value = "";
-        document.getElementById('status-file-label').innerText = "";
+        const label = document.getElementById('status-file-label');
+        if(label) label.innerText = "";
     } catch (e) {
-        showToast("Failed to post status.", "error");
+        console.error("Status Upload Error:", e);
+        showToast("Failed: " + e.message, "error");
     } finally {
         btn.innerText = "Post Status";
         btn.disabled = false;
@@ -216,7 +239,7 @@ function renderCurrentStatus() {
     
     // Mark as viewed
     if (currentStatusUser !== myName) {
-        database.ref(`statuses/${currentStatusUser}/${status.id}/views/${myName}`).set(firebase.database.ServerValue.TIMESTAMP);
+        database.ref(`users/${currentStatusUser}/statuses/${status.id}/views/${myName}`).set(firebase.database.ServerValue.TIMESTAMP);
     }
     
     document.getElementById('status-viewer-time').innerText = getTS(status.timestamp);
@@ -309,7 +332,7 @@ window.reactToStatus = function(emoji) {
     const statuses = statusesByContact[currentStatusUser];
     const status = statuses[currentStatusIndex];
     
-    database.ref(`statuses/${currentStatusUser}/${status.id}/reactions/${myName}`).set(emoji);
+    database.ref(`users/${currentStatusUser}/statuses/${status.id}/reactions/${myName}`).set(emoji);
     
     // Also send a chat message
     const roomPath = [myName, currentStatusUser].sort().join("_");

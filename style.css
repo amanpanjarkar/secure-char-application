@@ -194,13 +194,12 @@ textarea {
 
 /* Main App */
 .app-container {
-    width: 1400px;
-    max-width: 100%;
-    height: 95vh;
+    width: 100vw;
+    height: 100vh;
     background: var(--bg-app);
     display: flex;
     border-radius: 0;
-    box-shadow: 0 4px 20px var(--shadow-color);
+    box-shadow: none;
     overflow: hidden;
 }
 
@@ -677,11 +676,11 @@ textarea {
 
 @media screen and (min-width: 769px) {
     body {
-        padding: 20px;
+        padding: 0;
     }
 
     .app-container {
-        border-radius: 12px;
+        border-radius: 0;
     }
 }
 

@@ -41,24 +41,21 @@ window.playNotificationSound = () => {
     } catch (e) { console.warn("Audio Context blocked or unsupported"); }
 };
 
-window.playTipTipSound = () => {
+window.playTikSound = () => {
     try {
         const ctx = new (window.AudioContext || window.webkitAudioContext)();
-        const playBeep = (time) => {
-            const osc = ctx.createOscillator();
-            const gain = ctx.createGain();
-            osc.connect(gain);
-            gain.connect(ctx.destination);
-            osc.type = 'sine';
-            osc.frequency.setValueAtTime(1000, time);
-            gain.gain.setValueAtTime(0, time);
-            gain.gain.linearRampToValueAtTime(0.05, time + 0.02);
-            gain.gain.linearRampToValueAtTime(0, time + 0.08);
-            osc.start(time);
-            osc.stop(time + 0.08);
-        };
-        playBeep(ctx.currentTime);
-        playBeep(ctx.currentTime + 0.12);
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(1500, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(500, ctx.currentTime + 0.05);
+        gain.gain.setValueAtTime(0, ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.1, ctx.currentTime + 0.01);
+        gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.05);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + 0.05);
     } catch (e) {}
 };
 

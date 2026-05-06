@@ -211,7 +211,7 @@ window.toggleVoiceRecord = async function () {
                         payload.replyTo = currentReplyTo;
                     }
                     currentChatRef.push().set(payload);
-                    playTipTipSound();
+                    playTikSound();
                     if (typeof cancelReply === 'function') cancelReply();
                 }
             };

@@ -205,7 +205,7 @@ window.sendMessage = async function () {
     }
 
     currentChatRef.push().set(payload);
-    playTipTipSound();
+    playTikSound();
 
     inp.value = "";
     if (typeof cancelReply === 'function') cancelReply();
@@ -234,7 +234,7 @@ window.sendImageFile = async function () {
             time: getTS(),
             status: 'sent'
         });
-        playTipTipSound();
+        playTikSound();
     }
     fInput.value = "";
 };

@@ -33,9 +33,14 @@ window.confirmAddContact = function () {
 
     errorEl.style.display = "none";
 
-    database.ref('users/' + h).once('value', s => {
+    // Search for user by username
+    database.ref('users').orderByChild('username').equalTo(h).once('value', s => {
         if (s.exists()) {
-            database.ref(`users/${h}/requests/${myName}`).set({
+            let targetUid = "";
+            s.forEach(child => { targetUid = child.key; });
+
+            database.ref(`users/${targetUid}/requests/${myUid}`).set({
+                username: myName,
                 timestamp: getTS()
             });
 
@@ -190,8 +195,8 @@ window.toggleVoiceRecord = async function () {
                 voiceBtn.style.color = "";
                 voiceBtn.innerText = "🎤";
 
-                if (activeRecipient !== myName) {
-                    const snap = await database.ref(`users/${myName}/contacts/${activeRecipient}`).once('value');
+                if (activeRecipientUid !== myUid) {
+                    const snap = await database.ref(`users/${myUid}/contacts/${activeRecipientUid}`).once('value');
                     if (!snap.exists() || snap.val() !== true) {
                         showToast("You cannot send audio. You are no longer friends.", "error");
                         return;
@@ -204,6 +209,7 @@ window.toggleVoiceRecord = async function () {
                 if (url && currentChatRef) {
                     const payload = {
                         sender: myName,
+                        senderUid: myUid,
                         text: url,
                         type: 'audio',
                         time: getTS(),
@@ -257,15 +263,15 @@ window.closeRequestsModal = function () {
     if (modal) modal.style.display = "none";
 };
 
-window.acceptRequest = function (sender) {
-    database.ref(`users/${myName}/contacts/${sender}`).set(true);
-    database.ref(`users/${sender}/contacts/${myName}`).set(true);
-    database.ref(`users/${myName}/requests/${sender}`).remove();
-    alert(`System: Chat request from @${sender} accepted.`);
+window.acceptRequest = function (senderUid) {
+    database.ref(`users/${myUid}/contacts/${senderUid}`).set(true);
+    database.ref(`users/${senderUid}/contacts/${myUid}`).set(true);
+    database.ref(`users/${myUid}/requests/${senderUid}`).remove();
+    alert(`System: Chat request accepted.`);
 };
 
-window.rejectRequest = function (sender) {
-    database.ref(`users/${myName}/requests/${sender}`).remove();
+window.rejectRequest = function (senderUid) {
+    database.ref(`users/${myUid}/requests/${senderUid}`).remove();
 };
 
 window.toggleChatMenu = function () {
@@ -274,10 +280,10 @@ window.toggleChatMenu = function () {
 };
 
 window.clearCurrentChat = function () {
-    if (!activeRecipient || !currentChatRef) return;
+    if (!activeRecipientUid || !currentChatRef) return;
     showConfirm(`Are you sure you want to completely clear your chat history with @${activeRecipient}? This cannot be undone.`, () => {
         const now = Date.now();
-        database.ref(`users/${myName}/clearedChats/${activeRecipient}`).set(now).then(() => {
+        database.ref(`users/${myUid}/clearedChats/${activeRecipientUid}`).set(now).then(() => {
             document.getElementById('chat-box').innerHTML = "";
             toggleChatMenu();
             showToast("System: Chat cleared successfully.");
@@ -286,11 +292,11 @@ window.clearCurrentChat = function () {
 };
 
 window.unfriendCurrentContact = function () {
-    if (!activeRecipient) return;
+    if (!activeRecipientUid) return;
     showConfirm(`Are you sure you want to unfriend @${activeRecipient}? You will no longer see them in your contacts list.`, () => {
         // Remove from both contacts lists
-        database.ref(`users/${myName}/contacts/${activeRecipient}`).remove();
-        database.ref(`users/${activeRecipient}/contacts/${myName}`).remove().then(() => {
+        database.ref(`users/${myUid}/contacts/${activeRecipientUid}`).remove();
+        database.ref(`users/${activeRecipientUid}/contacts/${myUid}`).remove().then(() => {
             resetViewport();
             toggleChatMenu();
             showToast(`System: You have unfriended @${activeRecipient}.`);
@@ -337,12 +343,13 @@ window.addEventListener('keydown', (e) => {
 });
 
 function reportScreenshot() {
-    if (!activeRecipient || !currentChatRef || !isSensitiveChatEnabled) return;
+    if (!activeRecipientUid || !currentChatRef || !isSensitiveChatEnabled) return;
     
     showToast("⚠️ Screenshot detected! The other user has been notified.", "error");
 
     const payload = {
         sender: 'System',
+        senderUid: 'system',
         text: encodeMsg(`📸 @${myName} took a screenshot.`),
         type: 'system',
         time: getTS(),
@@ -354,7 +361,7 @@ function reportScreenshot() {
 // Drag and Drop support
 window.addEventListener('dragover', (e) => {
     e.preventDefault();
-    if (activeRecipient) {
+    if (activeRecipientUid) {
         const box = document.getElementById('chat-box');
         if (box) box.style.opacity = '0.7';
     }
@@ -362,7 +369,7 @@ window.addEventListener('dragover', (e) => {
 
 window.addEventListener('dragleave', (e) => {
     e.preventDefault();
-    if (activeRecipient) {
+    if (activeRecipientUid) {
         const box = document.getElementById('chat-box');
         if (box) box.style.opacity = '1';
     }
@@ -370,7 +377,7 @@ window.addEventListener('dragleave', (e) => {
 
 window.addEventListener('drop', (e) => {
     e.preventDefault();
-    if (activeRecipient) {
+    if (activeRecipientUid) {
         const box = document.getElementById('chat-box');
         if (box) box.style.opacity = '1';
         
@@ -385,6 +392,7 @@ window.addEventListener('drop', (e) => {
 window.onload = () => {
     const savedName = localStorage.getItem('secureChatUsername');
     const savedEmail = localStorage.getItem('secureChatUserEmail');
+    const savedUid = localStorage.getItem('secureChatUid');
 
     // Load settings
     const settings = JSON.parse(localStorage.getItem('secureChatSettings') || '{"msg":true,"call":true,"req":true}');
@@ -392,8 +400,9 @@ window.onload = () => {
     if (document.getElementById('setting-call-sound')) document.getElementById('setting-call-sound').checked = settings.call;
     if (document.getElementById('setting-req-sound')) document.getElementById('setting-req-sound').checked = settings.req;
 
-    if (savedName && savedEmail) {
+    if (savedName && savedEmail && savedUid) {
         myName = savedName;
+        myUid = savedUid;
         const authContainer = document.getElementById('auth-container');
         if (authContainer) authContainer.style.display = 'none';
 
@@ -470,7 +479,7 @@ window.capturePhoto = function() {
 
 // Call Simulation Logic
 window.startCall = function(type) {
-    if (!activeRecipient) return;
+    if (!activeRecipientUid) return;
     const modal = document.getElementById('call-modal');
     modal.style.display = 'flex';
     document.getElementById('call-name').innerText = activeRecipient;

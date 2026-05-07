@@ -2,10 +2,10 @@ function bootSystems() {
     const usernameDisplay = document.getElementById('my-username-display');
     if (usernameDisplay) usernameDisplay.innerText = myName;
 
-    database.ref('users/' + myName).update({ status: "Online", typing: "" });
-    database.ref('users/' + myName).onDisconnect().update({ status: "Offline", lastSeen: firebase.database.ServerValue.TIMESTAMP, typing: "" });
+    database.ref('users/' + myUid).update({ status: "Online", typing: "" });
+    database.ref('users/' + myUid).onDisconnect().update({ status: "Offline", lastSeen: firebase.database.ServerValue.TIMESTAMP, typing: "" });
 
-    database.ref(`users/${myName}/photo`).on('value', s => {
+    database.ref(`users/${myUid}/photo`).on('value', s => {
         const url = s.val() || defaultPic;
         const pImg = document.getElementById('display-pic');
         if (pImg) pImg.src = url;
@@ -28,7 +28,7 @@ let isInitialRequestLoad = true;
 let previousRequestCount = 0;
 
 function listenForRequests() {
-    database.ref(`users/${myName}/requests`).on('value', snap => {
+    database.ref(`users/${myUid}/requests`).on('value', snap => {
         const badge = document.getElementById('requests-badge');
         const list = document.getElementById('requests-list');
         if (!badge || !list) return;
@@ -46,30 +46,31 @@ function listenForRequests() {
         let count = 0;
         snap.forEach(req => {
             count++;
-            const sender = req.key;
+            const senderUid = req.key;
+            const senderUsername = req.val().username || "User";
             
-            const cardId = `request-card-${sender}`;
+            const cardId = `request-card-${senderUid}`;
             list.innerHTML += `
                 <div id="${cardId}" style="background: var(--bg-hover); border-radius: 12px; padding: 15px; margin-bottom: 12px; display: flex; flex-direction: column; gap: 12px; border: 1px solid var(--border-color); text-align: left;">
                     <div style="display: flex; align-items: center; gap: 12px;">
-                        <img id="req-pic-${sender}" src="${defaultPic}" style="width: 45px; height: 45px; border-radius: 50%; object-fit: cover;">
+                        <img id="req-pic-${senderUid}" src="${defaultPic}" style="width: 45px; height: 45px; border-radius: 50%; object-fit: cover;">
                         <div style="display: flex; flex-direction: column; overflow: hidden;">
-                            <span style="font-weight: bold; color: var(--text-main); font-size: 15px;">@${sender}</span>
-                            <span id="req-bio-${sender}" style="font-size: 12px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px;">User profile...</span>
+                            <span style="font-weight: bold; color: var(--text-main); font-size: 15px;">@${senderUsername}</span>
+                            <span id="req-bio-${senderUid}" style="font-size: 12px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px;">User profile...</span>
                         </div>
                     </div>
                     <div style="display: flex; gap: 8px;">
-                        <button onclick="acceptRequest('${sender}')" style="flex: 1; background: var(--accent); color: white; border: none; padding: 8px; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 13px;">Accept</button>
-                        <button onclick="rejectRequest('${sender}')" style="flex: 1; background: var(--bg-app); color: #f15c6d; border: 1px solid #f15c6d; padding: 8px; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 13px;">Reject</button>
+                        <button onclick="acceptRequest('${senderUid}')" style="flex: 1; background: var(--accent); color: white; border: none; padding: 8px; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 13px;">Accept</button>
+                        <button onclick="rejectRequest('${senderUid}')" style="flex: 1; background: var(--bg-app); color: #f15c6d; border: 1px solid #f15c6d; padding: 8px; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 13px;">Reject</button>
                     </div>
                 </div>
             `;
 
-            database.ref('users/' + sender).once('value', s => {
+            database.ref('users/' + senderUid).once('value', s => {
                 const u = s.val();
                 if (u) {
-                    const pic = document.getElementById(`req-pic-${sender}`);
-                    const bio = document.getElementById(`req-bio-${sender}`);
+                    const pic = document.getElementById(`req-pic-${senderUid}`);
+                    const bio = document.getElementById(`req-bio-${senderUid}`);
                     if (pic && u.photo) pic.src = u.photo;
                     if (bio) bio.innerText = u.bio || "No bio available";
                 }
@@ -94,9 +95,9 @@ function listenForRequests() {
 function initializeSidebar() {
     const list = document.getElementById('contact-list');
     list.innerHTML = "";
-    renderSidebarRow(myName, true);
+    renderSidebarRow(myUid, true);
 
-    const contactsRef = database.ref(`users/${myName}/contacts`);
+    const contactsRef = database.ref(`users/${myUid}/contacts`);
 
     contactsRef.on('value', snap => {
         const existingItems = document.querySelectorAll('.contact-item');
@@ -110,7 +111,7 @@ function initializeSidebar() {
         }
 
         snap.forEach(entry => {
-            if (entry.val() === true && entry.key !== myName) {
+            if (entry.val() === true && entry.key !== myUid) {
                 renderSidebarRow(entry.key, false);
             }
         });
@@ -129,7 +130,7 @@ function renderSidebarRow(cid, isSelfChat = false) {
         row.className = 'contact-item';
         row.id = `row-${cid}`;
 
-        const isTyping = u && u.typing === myName && !isSelfChat;
+        const isTyping = u && u.typing === myUid && !isSelfChat;
         const color = isTyping || (u && u.status === 'Online') ? '#25d366' : '#8696a0';
 
         let displayStatus = u ? (u.status || 'Offline') : 'Offline';
@@ -141,12 +142,13 @@ function renderSidebarRow(cid, isSelfChat = false) {
 
         const avatarSrc = u && u.photo ? u.photo : defaultPic;
         const dispName = isSelfChat ? `${u ? u.username : cid} (You)` : (u ? u.username : cid);
+        const username = u ? u.username : cid;
 
         row.innerHTML = `
             <div class="sidebar-avatar-frame">
                 <img src="${avatarSrc}" class="avatar" onclick="event.stopPropagation(); openFullImage('${avatarSrc}')">
             </div>
-            <div class="sidebar-info-frame" onclick="startChat('${cid}', '${avatarSrc}', ${isSelfChat})">
+            <div class="sidebar-info-frame" onclick="startChat('${cid}', '${username}', '${avatarSrc}', ${isSelfChat})">
                 <div class="contact-top">
                     <div class="contact-name">${dispName}</div>
                     <div class="contact-time" id="time-${cid}"></div>
@@ -167,9 +169,9 @@ function renderSidebarRow(cid, isSelfChat = false) {
 
         let isInitialMsgLoad = true;
         let previousUnread = 0;
-        const roomPath = [myName, cid].sort().join("_");
+        const roomPath = [myUid, cid].sort().join("_");
         
-        database.ref(`users/${myName}/clearedChats/${cid}`).on('value', clearSnap => {
+        database.ref(`users/${myUid}/clearedChats/${cid}`).on('value', clearSnap => {
             const clearedAt = clearSnap.val() || 0;
             
             database.ref('chats/' + roomPath).off('value'); // Prevent memory leak when re-rendering
@@ -183,7 +185,7 @@ function renderSidebarRow(cid, isSelfChat = false) {
 
                     const msg = msgSnap.val();
                     lastMsg = msg;
-                    if (msg.sender !== myName && msg.status !== 'seen') unreadCount++;
+                    if (msg.senderUid !== myUid && msg.status !== 'seen') unreadCount++;
                 });
 
                 if (!isInitialMsgLoad && unreadCount > previousUnread) {
@@ -208,7 +210,7 @@ function renderSidebarRow(cid, isSelfChat = false) {
                     else if (lastMsg.type === 'file') preview = "📄 Document";
                     else preview = decodeMsg(lastMsg.text);
 
-                    if (unreadCount > 0 && activeRecipient !== cid) {
+                    if (unreadCount > 0 && activeRecipientUid !== cid) {
                         unreadBadge.innerText = unreadCount;
                         unreadBadge.style.display = 'block';
                         statusDiv.innerText = preview;
@@ -220,7 +222,7 @@ function renderSidebarRow(cid, isSelfChat = false) {
                         }
                     } else {
                         unreadBadge.style.display = 'none';
-                        statusDiv.innerText = (u && u.typing === myName && !isSelfChat) ? 'typing...' : preview;
+                        statusDiv.innerText = (u && u.typing === myUid && !isSelfChat) ? 'typing...' : preview;
                         statusDiv.style.fontWeight = "normal";
                         statusDiv.style.color = "var(--text-muted)";
 

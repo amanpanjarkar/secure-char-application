@@ -14,12 +14,12 @@ window.loadStatuses = function() {
         console.error("Status Engine: 'status-tray' not found in DOM! (Is index.html cached?)");
     }
 
-    const contactsRef = database.ref(`users/${myName}/contacts`);
+    const contactsRef = database.ref(`users/${myUid}/contacts`);
     contactsRef.on('value', snap => {
-        let contacts = [myName];
+        let contacts = [myUid];
         if (snap.exists()) {
             snap.forEach(c => {
-                if (c.val() === true && c.key !== myName) contacts.push(c.key);
+                if (c.val() === true && c.key !== myUid) contacts.push(c.key);
             });
         }
         
@@ -31,13 +31,9 @@ window.loadStatuses = function() {
                 const s = statusSnap.val();
                 if (s) {
                     let activeStatuses = [];
-                    let hasUnseen = false;
                     for (let key in s) {
                         if (s[key].timestamp > oneDayAgo) {
                             activeStatuses.push({id: key, ...s[key]});
-                            if (contact !== myName && (!s[key].views || !s[key].views[myName])) {
-                                hasUnseen = true;
-                            }
                         }
                     }
                     if (activeStatuses.length > 0) {
@@ -70,14 +66,14 @@ function renderStatusTray() {
         </div>
     `;
 
-    Object.keys(statusesByContact).forEach(contact => {
-        const statuses = statusesByContact[contact];
+    Object.keys(statusesByContact).forEach(contactUid => {
+        const statuses = statusesByContact[contactUid];
         let hasUnseen = false;
-        if (contact !== myName) {
-            hasUnseen = statuses.some(st => !st.views || !st.views[myName]);
+        if (contactUid !== myUid) {
+            hasUnseen = statuses.some(st => !st.views || !st.views[myUid]);
         } else {
             // Update my avatar if I have a status
-            database.ref(`users/${myName}/photo`).once('value', pSnap => {
+            database.ref(`users/${myUid}/photo`).once('value', pSnap => {
                 const p = pSnap.val() || defaultPic;
                 const avatar = document.getElementById('my-status-avatar');
                 if(avatar) {
@@ -86,24 +82,26 @@ function renderStatusTray() {
                     document.getElementById('my-status-ring').style.border = '2px solid var(--border-color)';
                     document.getElementById('my-status-ring').onclick = (e) => {
                         e.stopPropagation();
-                        openStatusViewer(myName);
+                        openStatusViewer(myUid);
                     };
                 }
             });
             return; // Already rendered the "My Status" block
         }
 
-        database.ref('users/'+contact+'/photo').once('value', photoSnap => {
-            const p = photoSnap.val() || defaultPic;
+        database.ref('users/'+contactUid).once('value', uSnap => {
+            const u = uSnap.val();
+            const p = (u && u.photo) ? u.photo : defaultPic;
+            const name = (u && u.username) ? u.username : "User";
             const div = document.createElement('div');
             div.className = 'status-avatar-item';
             div.style.cssText = "display: flex; flex-direction: column; align-items: center; cursor: pointer; min-width: 60px;";
-            div.onclick = () => openStatusViewer(contact);
+            div.onclick = () => openStatusViewer(contactUid);
             div.innerHTML = `
                 <div style="width: 50px; height: 50px; border-radius: 50%; padding: 2px; border: 2px solid ${hasUnseen ? 'var(--accent)' : 'var(--border-color)'};">
                     <img src="${p}" style="width: 100%; height: 100%; border-radius: 50%; object-fit: cover;">
                 </div>
-                <span style="font-size: 11px; margin-top: 5px; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 60px;">${contact}</span>
+                <span style="font-size: 11px; margin-top: 5px; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 60px;">${name}</span>
             `;
             trayElement.appendChild(div);
         });
@@ -142,7 +140,7 @@ window.uploadStatus = async function() {
             payload.content = text;
         }
         
-        const newRef = database.ref(`users/${myName}/statuses`).push();
+        const newRef = database.ref(`users/${myUid}/statuses`).push();
         await newRef.set(payload);
         
         showToast("Status posted successfully!");
@@ -162,16 +160,17 @@ window.uploadStatus = async function() {
     }
 };
 
-window.openStatusViewer = function(contact) {
-    if (!statusesByContact[contact] || statusesByContact[contact].length === 0) return;
-    currentStatusUser = contact;
+window.openStatusViewer = function(contactUid) {
+    if (!statusesByContact[contactUid] || statusesByContact[contactUid].length === 0) return;
+    currentStatusUser = contactUid;
     currentStatusIndex = 0;
     
     document.getElementById('status-viewer-modal').style.display = 'flex';
-    document.getElementById('status-viewer-name').innerText = contact === myName ? 'My Status' : contact;
     
-    database.ref(`users/${contact}/photo`).once('value', s => {
-        document.getElementById('status-viewer-avatar').src = s.val() || defaultPic;
+    database.ref(`users/${contactUid}`).once('value', s => {
+        const u = s.val();
+        document.getElementById('status-viewer-name').innerText = contactUid === myUid ? 'My Status' : (u ? u.username : 'User');
+        document.getElementById('status-viewer-avatar').src = (u && u.photo) ? u.photo : defaultPic;
     });
     
     renderCurrentStatus();
@@ -239,8 +238,8 @@ function renderCurrentStatus() {
     }
     
     // Mark as viewed
-    if (currentStatusUser !== myName) {
-        database.ref(`users/${currentStatusUser}/statuses/${status.id}/views/${myName}`).set(firebase.database.ServerValue.TIMESTAMP);
+    if (currentStatusUser !== myUid) {
+        database.ref(`users/${currentStatusUser}/statuses/${status.id}/views/${myUid}`).set(firebase.database.ServerValue.TIMESTAMP);
     }
     
     document.getElementById('status-viewer-time').innerText = getTS(status.timestamp);
@@ -300,7 +299,7 @@ function renderCurrentStatus() {
     }
     
     // Bottom bar actions
-    if (currentStatusUser === myName) {
+    if (currentStatusUser === myUid) {
         document.getElementById('status-reactions').style.display = 'none';
         document.getElementById('status-views-container').style.display = 'block';
         const viewsCount = status.views ? Object.keys(status.views).length : 0;
@@ -333,12 +332,13 @@ window.reactToStatus = function(emoji) {
     const statuses = statusesByContact[currentStatusUser];
     const status = statuses[currentStatusIndex];
     
-    database.ref(`users/${currentStatusUser}/statuses/${status.id}/reactions/${myName}`).set(emoji);
+    database.ref(`users/${currentStatusUser}/statuses/${status.id}/reactions/${myUid}`).set(emoji);
     
     // Also send a chat message
-    const roomPath = [myName, currentStatusUser].sort().join("_");
+    const roomPath = [myUid, currentStatusUser].sort().join("_");
     database.ref(`chats/${roomPath}`).push().set({
         sender: myName,
+        senderUid: myUid,
         text: encodeMsg(`Reacted ${emoji} to your status.`),
         type: 'text',
         time: getTS(),
@@ -362,14 +362,20 @@ window.showStatusViews = function() {
     if (!status.views || Object.keys(status.views).length === 0) {
         list.innerHTML = "<div style='color: var(--text-muted); text-align: center;'>No views yet</div>";
     } else {
-        for (let viewer in status.views) {
-            const time = getTS(status.views[viewer]);
-            list.innerHTML += `
-                <div style="display: flex; justify-content: space-between; padding: 10px; background: var(--bg-hover); border-radius: 8px;">
-                    <span style="color: var(--text-main); font-weight: bold;">@${viewer}</span>
+        for (let viewerUid in status.views) {
+            const time = getTS(status.views[viewerUid]);
+            
+            // Fetch username for display
+            database.ref(`users/${viewerUid}/username`).once('value', uSnap => {
+                const uName = uSnap.val() || "User";
+                const viewerRow = document.createElement('div');
+                viewerRow.style.cssText = "display: flex; justify-content: space-between; padding: 10px; background: var(--bg-hover); border-radius: 8px; margin-bottom: 5px;";
+                viewerRow.innerHTML = `
+                    <span style="color: var(--text-main); font-weight: bold;">@${uName}</span>
                     <span style="color: var(--text-muted); font-size: 12px;">${time}</span>
-                </div>
-            `;
+                `;
+                list.appendChild(viewerRow);
+            });
         }
     }
     

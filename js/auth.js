@@ -10,15 +10,18 @@ window.registerUserFromPage = function () {
 
     const username = cleanName(handle);
 
-    database.ref('users/' + username).once('value').then(snapshot => {
+    // Check if username is taken
+    database.ref('users').orderByChild('username').equalTo(username).once('value').then(snapshot => {
         if (snapshot.exists()) {
-            throw new Error(`Handle @${username} is taken.`);
+            throw new Error(`Username @${username} is taken.`);
         }
         console.log("Auth: Registering credential...");
         return auth.createUserWithEmailAndPassword(email, pass);
     }).then(userCredential => {
-        console.log("DB: Provisioning user data node...");
-        return database.ref('users/' + username).set({
+        const uid = userCredential.user.uid;
+        console.log("DB: Provisioning user data node for UID:", uid);
+        return database.ref('users/' + uid).set({
+            uid: uid,
             username: username,
             email: email,
             photo: defaultPic,
@@ -64,27 +67,46 @@ window.loginUser = async function () {
     log("Auth: Initiating Firebase sign in...");
     try {
         const userCredential = await auth.signInWithEmailAndPassword(email, pass);
+        const uid = userCredential.user.uid;
         const authEmail = userCredential.user.email;
-        log("Auth: Success. Email: " + authEmail);
+        log("Auth: Success. UID: " + uid);
 
-        log("DB: Querying searchIndex...");
-        let snap = await database.ref('users').orderByChild('searchIndex').equalTo(authEmail.toLowerCase()).once('value');
-        log("DB: searchIndex snap exists? " + snap.exists());
-        if (snap.exists()) { proceedLogin(snap, authEmail); resetBtn(); return; }
+        log("DB: Fetching user profile...");
+        const snap = await database.ref('users/' + uid).once('value');
+        
+        if (snap.exists()) {
+            const userData = snap.val();
+            proceedLogin(uid, userData.username, authEmail);
+            resetBtn();
+            return;
+        }
 
-        log("DB: Querying exact authEmail...");
-        snap = await database.ref('users').orderByChild('email').equalTo(authEmail).once('value');
-        log("DB: authEmail snap exists? " + snap.exists());
-        if (snap.exists()) { proceedLogin(snap, authEmail); resetBtn(); return; }
-
-        log("DB: Querying raw typed email...");
-        snap = await database.ref('users').orderByChild('email').equalTo(email).once('value');
-        log("DB: typed email snap exists? " + snap.exists());
-        if (snap.exists()) { proceedLogin(snap, authEmail); resetBtn(); return; }
+        // Fallback for old users registered with username as key
+        log("DB: Profile not found by UID, checking legacy searchIndex...");
+        let legacySnap = await database.ref('users').orderByChild('searchIndex').equalTo(authEmail.toLowerCase()).once('value');
+        if (legacySnap.exists()) {
+            legacySnap.forEach(child => {
+                const oldUsername = child.key;
+                const oldData = child.val();
+                log("DB: Legacy profile found (@" + oldUsername + "). Migrating...");
+                
+                // Migrate to UID-based node
+                database.ref('users/' + uid).set({
+                    ...oldData,
+                    uid: uid,
+                    username: oldUsername
+                });
+                database.ref('users/' + oldUsername).remove();
+                
+                proceedLogin(uid, oldUsername, authEmail);
+            });
+            resetBtn();
+            return;
+        }
 
         resetBtn();
-        log("Error: Handle missing in DB.");
-        alert("System Error: Handle association missing.");
+        log("Error: Profile missing in DB.");
+        alert("System Error: Profile association missing.");
         await auth.signOut();
     } catch (err) {
         resetBtn();
@@ -93,22 +115,23 @@ window.loginUser = async function () {
     }
 };
 
-function proceedLogin(snapshot, finalEmail) {
-    snapshot.forEach(child => {
-        myName = child.key;
-        localStorage.setItem('secureChatUserEmail', finalEmail);
-        localStorage.setItem('secureChatUsername', myName);
+function proceedLogin(uid, username, finalEmail) {
+    myUid = uid;
+    myName = username;
+    localStorage.setItem('secureChatUserEmail', finalEmail);
+    localStorage.setItem('secureChatUsername', myName);
+    localStorage.setItem('secureChatUid', myUid);
 
-        document.getElementById('auth-container').style.display = 'none';
-        document.getElementById('chat-app').style.display = 'flex';
+    document.getElementById('auth-container').style.display = 'none';
+    document.getElementById('chat-app').style.display = 'flex';
 
-        bootSystems();
-    });
+    bootSystems();
 }
 
 window.logoutUser = function () {
     localStorage.removeItem('secureChatUsername');
     localStorage.removeItem('secureChatUserEmail');
+    localStorage.removeItem('secureChatUid');
     location.reload();
 };
 
@@ -120,37 +143,30 @@ window.changeMyUsername = async function() {
     if (!cleanNew || cleanNew === myName) return;
 
     try {
-        const check = await database.ref('users/' + cleanNew).once('value');
+        // Check if new username is taken
+        const check = await database.ref('users').orderByChild('username').equalTo(cleanNew).once('value');
         if (check.exists()) {
             alert("This username is already taken.");
             return;
         }
 
-        if (!confirm(`Are you sure? Your friends will need to re-add you as @${cleanNew}.`)) return;
+        if (!confirm(`Are you sure you want to change your username to @${cleanNew}? Your permanent ID remains the same, so your chats will not be lost.`)) return;
 
-        showToast("Migrating account...", "info");
+        showToast("Updating username...", "info");
 
-        // 1. Get old data
-        const oldDataSnap = await database.ref('users/' + myName).once('value');
-        const data = oldDataSnap.val();
+        // Just update the username field in the user's UID node
+        await database.ref('users/' + myUid).update({
+            username: cleanNew
+        });
 
-        // 2. Update username in data
-        data.username = cleanNew;
-
-        // 3. Write to new node
-        await database.ref('users/' + cleanNew).set(data);
-
-        // 4. Delete old node
-        await database.ref('users/' + myName).remove();
-
-        // 5. Update local storage and global variable
+        // Update local storage and global variable
         localStorage.setItem('secureChatUsername', cleanNew);
         myName = cleanNew; // Update global variable
 
         alert("Username changed successfully! The app will now reload.");
         location.reload();
     } catch (e) {
-        console.error("Migration Error:", e);
+        console.error("Update Error:", e);
         alert("Failed to change username: " + e.message);
     }
 };

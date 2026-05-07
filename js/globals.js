@@ -1,5 +1,7 @@
 let activeRecipient = "";
+let activeRecipientUid = "";
 let myName = "";
+let myUid = "";
 let currentChatRef = null;
 let currentReplyTo = null;
 let typingTimeout = null;

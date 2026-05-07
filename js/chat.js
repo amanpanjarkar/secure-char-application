@@ -14,37 +14,38 @@ const resetViewport = () => {
     document.getElementById('chat-app').classList.remove('mobile-chat-active');
 };
 
-window.startChat = function (target, photoUrl, isSelfChat = false) {
-    if (!target) return;
-    activeRecipient = target;
+window.startChat = function (targetUid, targetUsername, photoUrl, isSelfChat = false) {
+    if (!targetUid) return;
+    activeRecipient = targetUsername;
+    activeRecipientUid = targetUid;
     lastRenderedDate = null;
 
     document.getElementById('chat-app').classList.add('mobile-chat-active');
     document.getElementById('chat-placeholder').style.display = 'none';
     document.getElementById('chat-active-view').style.display = 'flex';
 
-    document.getElementById('active-user-title').innerText = isSelfChat ? `${target} (You)` : target;
+    document.getElementById('active-user-title').innerText = isSelfChat ? `${targetUsername} (You)` : targetUsername;
     if (photoUrl) document.getElementById('active-user-pic').src = photoUrl;
     document.getElementById('chat-box').innerHTML = "";
 
-    const roomPath = [myName, activeRecipient].sort().join("_");
+    const roomPath = [myUid, activeRecipientUid].sort().join("_");
 
-    database.ref(`users/${myName}/clearedChats/${target}`).on('value', s => {
+    database.ref(`users/${myUid}/clearedChats/${activeRecipientUid}`).on('value', s => {
         chatClearedAtTimestamp = s.val() || 0;
     });
 
-    console.log("Updating currentChatRef:", { myName, activeRecipient, roomPath });
+    console.log("Updating currentChatRef:", { myUid, activeRecipientUid, roomPath });
     if (currentChatRef) currentChatRef.off();
     currentChatRef = database.ref('chats/' + roomPath);
     console.log("currentChatRef set to:", currentChatRef.toString());
 
-    database.ref('users/' + target).on('value', snap => {
+    database.ref('users/' + activeRecipientUid).on('value', snap => {
         const u = snap.val();
         const sLabel = document.getElementById('last-seen-status');
         if (isSelfChat) {
             sLabel.innerText = "Message yourself";
             sLabel.style.color = "#8696a0";
-        } else if (u && u.typing === myName) {
+        } else if (u && u.typing === myUid) {
             sLabel.innerText = "typing...";
             sLabel.style.color = "#25d366";
         } else if (u) {
@@ -66,7 +67,7 @@ function listenToTraffic() {
         if (ts <= chatClearedAtTimestamp) return;
 
         const d = snap.val();
-        if (d.sender !== myName && d.status !== 'seen') {
+        if (d.senderUid !== myUid && d.status !== 'seen') {
             currentChatRef.child(snap.key).update({ status: 'seen' });
         }
 
@@ -95,7 +96,7 @@ function listenToTraffic() {
         // Re-render bubble if edited or reacted
         const oldEl = document.getElementById(`msg-${snap.key}`);
         if (oldEl) {
-            const isMe = data.sender === myName;
+            const isMe = data.senderUid === myUid;
             updateMessageBubble(oldEl, data, snap.key, isMe);
         }
     });
@@ -107,7 +108,7 @@ function listenToTraffic() {
 }
 
 function renderMessageBubble(data, key) {
-    const isMe = data.sender === myName;
+    const isMe = data.senderUid === myUid;
     const box = document.getElementById('chat-box');
     const msgDiv = document.createElement('div');
 
@@ -171,7 +172,7 @@ function updateMessageBubble(msgDiv, data, key, isMe) {
     if (data.replyTo) {
         quotedHTML = `
             <div class="quoted-message" onclick="scrollToMessage('${data.replyTo.key}')">
-                <span class="quoted-sender">${data.replyTo.sender === myName ? 'You' : data.replyTo.sender}</span>
+                <span class="quoted-sender">${data.replyTo.senderUid === myUid ? 'You' : data.replyTo.sender}</span>
                 <span class="quoted-text">${data.replyTo.text}</span>
             </div>
         `;
@@ -272,9 +273,9 @@ window.sendMessage = async function () {
         return;
     }
 
-    if (activeRecipient !== myName) {
+    if (activeRecipientUid !== myUid) {
         try {
-            const snap = await database.ref(`users/${myName}/contacts/${activeRecipient}`).once('value');
+            const snap = await database.ref(`users/${myUid}/contacts/${activeRecipientUid}`).once('value');
             if (!snap.exists() || snap.val() !== true) {
                 showToast("You cannot send a message. You are no longer friends.", "error");
                 return;
@@ -288,6 +289,7 @@ window.sendMessage = async function () {
 
     const payload = {
         sender: myName,
+        senderUid: myUid,
         text: encodeMsg(val),
         type: 'text',
         time: getTS(),
@@ -305,7 +307,7 @@ window.sendMessage = async function () {
         inp.value = "";
         if (typeof cancelReply === 'function') cancelReply();
         if (typeof handleTyping === 'function') handleTyping();
-        database.ref('users/' + myName).update({ typing: "" });
+        database.ref('users/' + myUid).update({ typing: "" });
     } catch (error) {
         console.error("Failed to send message:", error);
         showToast("Failed to send message. Please try again.", "error");
@@ -317,8 +319,8 @@ window.sendFile = async function (fileParam = null) {
     const file = fileParam || (fInput ? fInput.files[0] : null);
     if (!file || !currentChatRef) return;
 
-    if (activeRecipient !== myName) {
-        const snap = await database.ref(`users/${myName}/contacts/${activeRecipient}`).once('value');
+    if (activeRecipientUid !== myUid) {
+        const snap = await database.ref(`users/${myUid}/contacts/${activeRecipientUid}`).once('value');
         if (!snap.exists() || snap.val() !== true) {
             showToast("You cannot send files. You are no longer friends.", "error");
             if (fInput) fInput.value = "";
@@ -343,6 +345,7 @@ window.sendFile = async function (fileParam = null) {
         if (url) {
             const payload = {
                 sender: myName,
+                senderUid: myUid,
                 text: url,
                 type: type,
                 fileName: file.name,
@@ -372,18 +375,18 @@ window.updateProfilePhoto = async function () {
     if (!file) return;
     const url = await uploadToCloudinary(file);
     if (url) {
-        database.ref(`users/${myName}`).update({ photo: url });
+        database.ref(`users/${myUid}`).update({ photo: url });
         alert("System: Profile updated successfully.");
     }
 };
 
 window.updateTypingStatus = function () {
-    if (!activeRecipient || activeRecipient === myName) return;
-    database.ref('users/' + myName).update({ typing: activeRecipient });
+    if (!activeRecipientUid || activeRecipientUid === myUid) return;
+    database.ref('users/' + myUid).update({ typing: activeRecipientUid });
 
     clearTimeout(typingTimeout);
     typingTimeout = setTimeout(() => {
-        database.ref('users/' + myName).update({ typing: "" });
+        database.ref('users/' + myUid).update({ typing: "" });
     }, 1800);
 };
 
@@ -423,7 +426,7 @@ window.updateMessage = async function () {
 // Reaction Logic
 window.reactToMessage = function (key, emoji) {
     if (!currentChatRef) return;
-    currentChatRef.child(key + '/reactions/' + myName).set(emoji);
+    currentChatRef.child(key + '/reactions/' + myUid).set(emoji);
 };
 
 window.showReactionPicker = function (key) {

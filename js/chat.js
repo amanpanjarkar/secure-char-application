@@ -290,7 +290,7 @@ window.sendMessage = async function () {
 
     if (activeRecipientUid !== myUid) {
         try {
-            const snap = await database.ref(`users/${myName}/contacts/${activeRecipient}`).once('value');
+            const snap = await database.ref(`users/${myUid}/contacts/${activeRecipientUid}`).once('value');
             if (!snap.exists() || snap.val() !== true) {
                 // Temporarily allow sending for testing
                 console.warn("Friendship not found, but allowing send for testing");

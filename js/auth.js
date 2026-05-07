@@ -11,16 +11,20 @@ window.registerUserFromPage = function () {
     const username = cleanName(handle);
 
     // Check if username is taken
+    console.log("Auth: Checking if username is taken:", username);
     database.ref('users').orderByChild('username').equalTo(username).once('value').then(snapshot => {
         if (snapshot.exists()) {
+            console.warn("Auth: Username taken:", username);
             throw new Error(`Username @${username} is taken.`);
         }
-        console.log("Auth: Registering credential...");
+        console.log("Auth: Username available. Creating Firebase Auth account...");
         return auth.createUserWithEmailAndPassword(email, pass);
     }).then(userCredential => {
         const uid = userCredential.user.uid;
-        console.log("DB: Provisioning user data node for UID:", uid);
-        return database.ref('users/' + uid).set({
+        console.log("Auth: Account created. UID:", uid);
+        console.log("DB: Provisioning user data node...");
+        
+        const userData = {
             uid: uid,
             username: username,
             email: email,
@@ -33,12 +37,24 @@ window.registerUserFromPage = function () {
                 platform: navigator.platform,
                 registeredAt: firebase.database.ServerValue.TIMESTAMP
             }
+        };
+
+        // Also update Auth profile display name for clarity in Firebase Console
+        userCredential.user.updateProfile({ displayName: username }).catch(e => console.warn("Auth: Could not update profile display name", e));
+
+        return database.ref('users/' + uid).set(userData).then(() => {
+            console.log("DB: User data node created successfully for", username);
+            return userData;
+        }).catch(dbErr => {
+            console.error("DB Error during registration:", dbErr);
+            throw new Error("Failed to save user profile to database: " + dbErr.message);
         });
     }).then(() => {
+        console.log("Auth: Registration complete. Redirecting...");
         alert(`Account Verified! Welcome @${username}. Please log in now.`);
         window.location.href = "index.html";
     }).catch(error => {
-        console.error("Auth Exception:", error.message);
+        console.error("Registration Process Exception:", error);
         alert("Registration Failed: " + error.message);
     });
 };
@@ -98,6 +114,9 @@ window.loginUser = async function () {
                 });
                 database.ref('users/' + oldUsername).remove();
                 
+                // Update Auth profile display name
+                userCredential.user.updateProfile({ displayName: oldUsername }).catch(e => console.warn("Auth: Could not update legacy profile name", e));
+                
                 proceedLogin(uid, oldUsername, authEmail);
             });
             resetBtn();
@@ -117,7 +136,7 @@ window.loginUser = async function () {
 
 function proceedLogin(uid, username, finalEmail) {
     myUid = uid;
-    myName = username;
+    myName = username || "User"; // Fallback to avoid empty username
     localStorage.setItem('secureChatUserEmail', finalEmail);
     localStorage.setItem('secureChatUsername', myName);
     localStorage.setItem('secureChatUid', myUid);

@@ -2,6 +2,7 @@ let activeRecipient = "";
 let myName = "";
 let currentChatRef = null;
 let currentReplyTo = null;
+let currentEditMessageId = null;
 let typingTimeout = null;
 let networkStatus = true;
 let lastRenderedDate = null;

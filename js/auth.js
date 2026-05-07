@@ -42,12 +42,11 @@ window.registerUserFromPage = function () {
         // Also update Auth profile display name
         userCredential.user.updateProfile({ displayName: username }).catch(e => console.warn("Auth: Could not update profile display name", e));
 
-        // Atomic write to both nodes
-        const updates = {};
-        updates['users/' + uid] = userData;
-        updates['usernames/' + username] = uid;
-
-        return database.ref().update(updates).then(() => {
+        // Use Promise.all for individual sets to be more resilient to root-level permission rules
+        return Promise.all([
+            database.ref('users/' + uid).set(userData),
+            database.ref('usernames/' + username).set(uid)
+        ]).then(() => {
             console.log("DB: Registration success for", username);
             return userData;
         }).catch(dbErr => {
@@ -183,12 +182,11 @@ window.changeMyUsername = async function() {
         showToast("Updating username...", "info");
 
         const oldName = myName;
-        const updates = {};
-        updates['users/' + myUid + '/username'] = cleanNew;
-        updates['usernames/' + cleanNew] = myUid;
-        updates['usernames/' + oldName] = null; // Free up the old username
+        const p1 = database.ref('users/' + myUid + '/username').set(cleanNew);
+        const p2 = database.ref('usernames/' + cleanNew).set(myUid);
+        const p3 = database.ref('usernames/' + oldName).remove();
 
-        await database.ref().update(updates);
+        await Promise.all([p1, p2, p3]);
 
         // Update local storage and global variable
         localStorage.setItem('secureChatUsername', cleanNew);

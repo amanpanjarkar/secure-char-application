@@ -455,9 +455,7 @@ function (
     );
 
     let resourceType = "auto";
-    if (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
-        resourceType = "raw";
-    } else if (file.type.startsWith("image/")) {
+    if (file.type.startsWith("image/")) {
         resourceType = "image";
     } else if (file.type.startsWith("video/")) {
         resourceType = "video";
@@ -511,20 +509,26 @@ function (
                         xhr.status < 300
                     ) {
 
-                        const data =
-                            JSON.parse(
-                                xhr.responseText
+                        try {
+                            const data =
+                                JSON.parse(
+                                    xhr.responseText
+                                );
+                            console.log("Cloudinary response:", data);
+                            resolve(
+                                data.secure_url
                             );
-
-                        resolve(
-                            data.secure_url
-                        );
+                        } catch (e) {
+                            console.error("Failed to parse Cloudinary response:", xhr.responseText);
+                            reject(e);
+                        }
 
                     } else {
 
+                        console.error("Upload failed, status:", xhr.status, "Response:", xhr.responseText);
                         reject(
                             new Error(
-                                "Upload failed"
+                                `Upload failed: ${xhr.status} ${xhr.responseText}`
                             )
                         );
                     }

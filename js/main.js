@@ -277,19 +277,37 @@ function initializeSidebar() {
 
     database.ref(`users/${myUid}/contacts`).on("child_changed", snap => {
         renderSidebarRow(snap.key);
+        sortContactsList();
     });
 
     database.ref(`users/${myUid}/contacts`).on("child_removed", snap => {
         const row = document.getElementById(`row-${snap.key}`);
         if (row) row.remove();
     });
-
-    // Handle existing logic if snap didn't exist? Actually child_added handles everything.
-    // The previous on("value") was removing the myUid (You) row too.
-
 }
 
-/* ROW */
+/* SORT CONTACTS BY RECENT MESSAGE */
+
+function sortContactsList() {
+    const list = document.getElementById("contact-list");
+    if (!list) return;
+
+    const rows = Array.from(list.children);
+    
+    rows.sort((rowA, rowB) => {
+        // Keep "You" at the top
+        if (rowA.id === `row-${myUid}`) return -1;
+        if (rowB.id === `row-${myUid}`) return 1;
+        
+        const timeA = parseInt(rowA.dataset.lastMessageAt || 0);
+        const timeB = parseInt(rowB.dataset.lastMessageAt || 0);
+        
+        return timeB - timeA; // Most recent first
+    });
+    
+    rows.forEach(row => list.appendChild(row));
+}
+
 
 function renderSidebarRow(
     uid,
@@ -370,6 +388,13 @@ function renderSidebarRow(
                     }
                 });
 
+                // Track last message timestamp for sorting
+                database.ref(`users/${myUid}/contacts/${uid}/lastMessageAt`).on("value", snap => {
+                    const timestamp = snap.val() || 0;
+                    row.dataset.lastMessageAt = timestamp;
+                    sortContactsList();
+                });
+
                 // DELIVERED LOGIC: Listen for incoming messages to mark as delivered
                 const roomId = [myUid, uid].sort().join("_");
                 database.ref(`chats/${roomId}`).limitToLast(10).on("child_added", snap => {
@@ -382,6 +407,9 @@ function renderSidebarRow(
                             }
                             return; // Abort if already delivered or seen
                         });
+                        
+                        // Update last message timestamp
+                        database.ref(`users/${myUid}/contacts/${uid}/lastMessageAt`).set(firebase.database.ServerValue.TIMESTAMP);
                     }
                 });
             }

@@ -457,8 +457,10 @@ async function () {
 
         // Increment unread count for recipient
         database.ref(`users/${activeRecipientUid}/contacts/${myUid}/unreadCount`).transaction(c => (c || 0) + 1);
-
-        // playTikSound(); // Removed irritating tap sound
+        
+        // Update last message timestamp for sorting
+        database.ref(`users/${activeRecipientUid}/contacts/${myUid}/lastMessageAt`).set(firebase.database.ServerValue.TIMESTAMP);
+        database.ref(`users/${myUid}/contacts/${activeRecipientUid}/lastMessageAt`).set(firebase.database.ServerValue.TIMESTAMP);
 
         input.value = "";
 
@@ -548,7 +550,23 @@ function () {
 };
 
 window.sendFile = async function(file) {
-    if (!file || !currentChatRef) return;
+    if (!file) {
+        console.error("sendFile: No file provided");
+        showToast("No file selected", "error");
+        return;
+    }
+    
+    if (!currentChatRef) {
+        console.error("sendFile: No chat open");
+        showToast("Please open a chat first", "error");
+        return;
+    }
+    
+    if (!activeRecipientUid) {
+        console.error("sendFile: No recipient");
+        showToast("No recipient selected", "error");
+        return;
+    }
 
     try {
         // Check if blocked
@@ -581,6 +599,12 @@ window.sendFile = async function(file) {
 
         const url = await uploadToCloudinary(file, preset);
         
+        if (!url) {
+            throw new Error("Cloudinary returned empty URL");
+        }
+        
+        console.log("Upload successful, URL:", url, "Type:", type, "Preset:", preset);
+        
         await currentChatRef.push().set({
             sender: myName,
             senderUid: myUid,
@@ -595,9 +619,13 @@ window.sendFile = async function(file) {
         // Increment unread count for recipient
         database.ref(`users/${activeRecipientUid}/contacts/${myUid}/unreadCount`).transaction(c => (c || 0) + 1);
         
+        // Update last message timestamp for sorting
+        database.ref(`users/${activeRecipientUid}/contacts/${myUid}/lastMessageAt`).set(firebase.database.ServerValue.TIMESTAMP);
+        database.ref(`users/${myUid}/contacts/${activeRecipientUid}/lastMessageAt`).set(firebase.database.ServerValue.TIMESTAMP);
+        
         showToast("File sent");
     } catch (e) {
-        console.error(e);
+        console.error("Send file error:", e);
         showToast("Failed to send file", "error");
     }
 };
@@ -625,10 +653,28 @@ window.showMsgMenu = function(e, msgId, data) {
     }
 
     menu.innerHTML = html;
-    menu.style.top = e.clientY + "px";
-    menu.style.left = e.clientX + "px";
-    
+    menu.style.top = "0px";
+    menu.style.left = "0px";
+    menu.style.visibility = "hidden";
     document.body.appendChild(menu);
+
+    const rect = menu.getBoundingClientRect();
+    const padding = 8;
+    let top = e.clientY;
+    let left = e.clientX;
+
+    if (top + rect.height + padding > window.innerHeight) {
+        top = Math.max(padding, window.innerHeight - rect.height - padding);
+    }
+    if (left + rect.width + padding > window.innerWidth) {
+        left = Math.max(padding, window.innerWidth - rect.width - padding);
+    }
+    if (top < padding) top = padding;
+    if (left < padding) left = padding;
+
+    menu.style.top = top + "px";
+    menu.style.left = left + "px";
+    menu.style.visibility = "visible";
 };
 
 window.deleteMsg = async function(msgId, mode) {

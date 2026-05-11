@@ -421,6 +421,16 @@ async function () {
                             }
                         );
 
+                    if (blob.size === 0) {
+                        console.error("Voice recording: Empty blob created");
+                        showToast("Recording is empty, please try again", "error");
+                        isRecording = false;
+                        btn.innerText = "🎤";
+                        btn.style.background = "";
+                        stream.getTracks().forEach(track => track.stop());
+                        return;
+                    }
+
                     const file =
                         new File(
                             [blob],
@@ -431,9 +441,20 @@ async function () {
                             }
                         );
 
-                    await sendFile(
-                        file
-                    );
+                    try {
+                        console.log("Voice recording: Starting upload, file size:", file.size);
+                        await sendFile(
+                            file
+                        );
+                        showToast("Voice message sent");
+                    } catch (e) {
+                        console.error("Failed to send voice:", e);
+                        showToast("Failed to send voice message: " + e.message, "error");
+                    } finally {
+                        isRecording = false;
+                        btn.innerText = "🎤";
+                        btn.style.background = "";
+                    }
 
                     stream
                         .getTracks()
